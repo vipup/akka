@@ -55,7 +55,8 @@ private[akka] final class ArterySettings private (config: Config) {
       case other ⇒ other
     }
 
-    val BindTimeout = getDuration("bind-timeout").requiring(!_.isNegative, "bind-timeout can not be negative")
+    val BindTimeout: FiniteDuration = config.getMillisDuration("bind-timeout").requiring(
+      _ > Duration.Zero, "bind-timeout can not be negative")
   }
 
   val LargeMessageDestinations =
