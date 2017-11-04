@@ -445,10 +445,10 @@ private[remote] final class EnvelopeBuffer(val byteBuffer: ByteBuffer) {
     // Read fixed length parts
     header.setVersion(byteBuffer.get(VersionOffset))
 
-    if (header.version > ArteryTransport.Version)
+    if (header.version > ArteryTransport.HighestVersion)
       throw new IllegalArgumentException(
         s"Incompatible protocol version [${header.version}], " +
-          s"highest known version for this node is [${ArteryTransport.Version}]")
+          s"highest known version for this node is [${ArteryTransport.HighestVersion}]")
 
     // frameLength and streamId were added in version 1
     val adjust =

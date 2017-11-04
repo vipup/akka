@@ -732,7 +732,8 @@ private[remote] abstract class ArteryTransport(_system: ExtendedActorSystem, _pr
   }
 
   def createEncoder(pool: EnvelopeBufferPool, streamId: Int): Flow[OutboundEnvelope, EnvelopeBuffer, OutboundCompressionAccess] =
-    Flow.fromGraph(new Encoder(localAddress, system, outboundEnvelopePool, pool, streamId, settings.LogSend))
+    Flow.fromGraph(new Encoder(localAddress, system, outboundEnvelopePool, pool, streamId, settings.LogSend,
+      settings.Version))
 
   def createDecoder(settings: ArterySettings, compressions: InboundCompressions, bufferPool: EnvelopeBufferPool): Flow[EnvelopeBuffer, InboundEnvelope, InboundCompressionAccess] =
     Flow.fromGraph(new Decoder(this, system, localAddress, settings, bufferPool, compressions, inboundEnvelopePool))
@@ -833,7 +834,9 @@ private[remote] object ArteryTransport {
 
   val ProtocolName = "akka"
 
-  val Version: Byte = 1 // FIXME use 0 for Aeron, move to ArterySettings
+  // Note that the actual Version is in ArterySettings, and may depend on the used transport.
+  // This is the highest supported version on receiving (decoding) side
+  val HighestVersion: Byte = 1
 
   class AeronTerminated(e: Throwable) extends RuntimeException(e)
 

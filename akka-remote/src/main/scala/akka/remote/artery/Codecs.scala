@@ -48,7 +48,8 @@ private[remote] class Encoder(
   outboundEnvelopePool: ObjectPool[ReusableOutboundEnvelope],
   bufferPool:           EnvelopeBufferPool,
   streamId:             Int,
-  debugLogSend:         Boolean)
+  debugLogSend:         Boolean,
+  version:              Byte)
   extends GraphStageWithMaterializedValue[FlowShape[OutboundEnvelope, EnvelopeBuffer], Encoder.OutboundCompressionAccess] {
   import Encoder._
 
@@ -60,7 +61,7 @@ private[remote] class Encoder(
     val logic = new GraphStageLogic(shape) with InHandler with OutHandler with StageLogging with OutboundCompressionAccess {
 
       private val headerBuilder = HeaderBuilder.out()
-      headerBuilder setVersion ArteryTransport.Version
+      headerBuilder setVersion version
       headerBuilder setUid uniqueLocalAddress.uid
       headerBuilder setStreamId streamId.toByte
       private val localAddress = uniqueLocalAddress.address

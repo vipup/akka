@@ -80,6 +80,14 @@ private[akka] final class ArterySettings private (config: Config) {
       """"aeron-udp", "tcp", or "tls-tcp"""")
   }
 
+  val Version: Byte = Transport match {
+    case AeronUpd ⇒
+      // using older version for Aeron for backwards compatibility,
+      // and the new fields (FrameLength, StreamId) are not needed for Aeron
+      0
+    case Tcp | TlsTcp ⇒ ArteryTransport.HighestVersion
+  }
+
   object Advanced {
     val config = getConfig("advanced")
     import config._
