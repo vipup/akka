@@ -256,7 +256,7 @@ abstract class AeronStreamLatencySpec
             envelope
           }
 
-        val queueValue = Source.fromGraph(new SendQueue[Unit])
+        val queueValue = Source.fromGraph(new SendQueue[Unit](system.deadLetters))
           .via(sendFlow)
           .to(new AeronSink(channel(second), streamId, aeron, taskRunner, pool, giveUpMessageAfter, IgnoreEventSink))
           .run()

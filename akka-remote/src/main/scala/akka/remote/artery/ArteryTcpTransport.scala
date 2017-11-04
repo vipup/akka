@@ -85,6 +85,8 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
       RestartFlow.withBackoff[ByteString, ByteString](1.second, 5.seconds, 0.1) { () ⇒
         println(s"# RestartFlow ${outboundContext.remoteAddress.hostPort}") // FIXME
         connectionFlow.mapMaterializedValue(_ ⇒ NotUsed)
+          .log(name = s"outbound connection to [${outboundContext.remoteAddress}]")
+          .addAttributes(Attributes.logLevels(onElement = LogLevels.Off))
       }
     }
 

@@ -524,7 +524,7 @@ private[remote] class Association(
     val streamKillSwitch = KillSwitches.shared("outboundControlStreamKillSwitch")
 
     val (queueValue, (control, completed)) =
-      Source.fromGraph(new SendQueue[OutboundEnvelope])
+      Source.fromGraph(new SendQueue[OutboundEnvelope](transport.system.deadLetters))
         .via(streamKillSwitch.flow)
         .toMat(transport.outboundControl(this))(Keep.both)
         .run()(materializer)
@@ -563,7 +563,7 @@ private[remote] class Association(
       val streamKillSwitch = KillSwitches.shared("outboundMessagesKillSwitch")
 
       val (queueValue, testMgmt, changeCompression, completed) =
-        Source.fromGraph(new SendQueue[OutboundEnvelope])
+        Source.fromGraph(new SendQueue[OutboundEnvelope](transport.system.deadLetters))
           .via(streamKillSwitch.flow)
           .viaMat(transport.outboundTestFlow(this))(Keep.both)
           .toMat(transport.outbound(this))({ case ((a, b), (c, d)) ⇒ (a, b, c, d) }) // "keep all, exploded"
@@ -590,7 +590,7 @@ private[remote] class Association(
 
       val streamKillSwitch = KillSwitches.shared("outboundMessagesKillSwitch")
 
-      val lane = Source.fromGraph(new SendQueue[OutboundEnvelope])
+      val lane = Source.fromGraph(new SendQueue[OutboundEnvelope](transport.system.deadLetters))
         .via(streamKillSwitch.flow)
         .via(transport.outboundTestFlow(this))
         .viaMat(transport.outboundLane(this))(Keep.both)
@@ -644,7 +644,7 @@ private[remote] class Association(
 
     val streamKillSwitch = KillSwitches.shared("outboundLargeMessagesKillSwitch")
 
-    val (queueValue, completed) = Source.fromGraph(new SendQueue[OutboundEnvelope])
+    val (queueValue, completed) = Source.fromGraph(new SendQueue[OutboundEnvelope](transport.system.deadLetters))
       .via(streamKillSwitch.flow)
       .via(transport.outboundTestFlow(this))
       .toMat(transport.outboundLarge(this))(Keep.both)
