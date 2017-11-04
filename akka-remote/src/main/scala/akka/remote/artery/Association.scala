@@ -370,7 +370,7 @@ private[remote] class Association(
         case ShuttingDown ⇒ // silence it
       }
     } else if (log.isDebugEnabled)
-      log.debug(
+      log.warning( // FIXME debug level
         "Dropping message [{}] from [{}] to [{}] due to quarantined system [{}]",
         Logging.messageClassName(message), sender.getOrElse(deadletters), recipient.getOrElse(recipient), remoteAddress)
   }
@@ -675,6 +675,11 @@ private[remote] class Association(
     }
 
     implicit val ec = materializer.executionContext
+    streamCompleted.foreach { _ ⇒
+      // shutdown as expected
+      // countDown the latch in case threads are waiting on the latch in outboundControlIngress method
+      materializing.countDown()
+    }
     streamCompleted.failed.foreach {
       case ArteryTransport.ShutdownSignal ⇒
         // shutdown as expected
@@ -699,7 +704,9 @@ private[remote] class Association(
         if (queueIndex == ControlQueueIndex) {
           cause match {
             case _: HandshakeTimeoutException ⇒ // ok, quarantine not possible without UID
-            case _                            ⇒ quarantine("Outbound control stream restarted")
+            case _ ⇒
+              // FIXME can we avoid quarantine if all system messages have been delivered?
+              quarantine("Outbound control stream restarted")
           }
         }
 

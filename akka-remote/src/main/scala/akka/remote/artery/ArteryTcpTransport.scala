@@ -34,16 +34,23 @@ import akka.stream.scaladsl.Tcp
 import akka.stream.scaladsl.Tcp.ServerBinding
 import akka.util.ByteString
 import scala.concurrent.Await
+import scala.concurrent.Promise
+
+import akka.event.Logging
+import akka.stream.Attributes
+import akka.stream.Attributes.LogLevels
+import akka.stream.scaladsl.RestartFlow
+import akka.stream.scaladsl.RestartSink
+import akka.stream.scaladsl.Source
 
 /**
  * INTERNAL API
  */
-private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider: RemoteActorRefProvider)
+private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider: RemoteActorRefProvider,
+                                         tlsEnabled: Boolean)
   extends ArteryTransport(_system, _provider) {
   import ArteryTransport.InboundStreamMatValues
   import FlightRecorderEvents._
-
-  val tlsEnabled = true // FIXME config
 
   private var serverBinding: Option[Future[ServerBinding]] = None
 
@@ -58,9 +65,10 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
     bufferPool:      EnvelopeBufferPool): Sink[EnvelopeBuffer, Future[Done]] = {
     implicit val sys = system
 
-    val tcp = Tcp().outgoingConnection(outboundContext.remoteAddress.host.get, outboundContext.remoteAddress.port.get)
+    println(s"# outgoingConnection ${outboundContext.remoteAddress.hostPort}") // FIXME
+    def tcp = Tcp().outgoingConnection(outboundContext.remoteAddress.host.get, outboundContext.remoteAddress.port.get)
 
-    val connectionFlow: Flow[ByteString, ByteString, Future[Tcp.OutgoingConnection]] =
+    def connectionFlow: Flow[ByteString, ByteString, Future[Tcp.OutgoingConnection]] =
       if (tlsEnabled) {
         Flow[ByteString]
           .map(bytes ⇒ SendBytes(bytes))
@@ -71,15 +79,29 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
       } else
         tcp
 
+    def connectionFlowWithRestart: Flow[ByteString, ByteString, NotUsed] = {
+      import scala.concurrent.duration._
+      // FIXME config of backoff
+      RestartFlow.withBackoff[ByteString, ByteString](1.second, 5.seconds, 0.1) { () ⇒
+        println(s"# RestartFlow ${outboundContext.remoteAddress.hostPort}") // FIXME
+        connectionFlow.mapMaterializedValue(_ ⇒ NotUsed)
+      }
+    }
+
     Flow[EnvelopeBuffer]
       .map { env ⇒
         val bytes = ByteString(env.byteBuffer)
         bufferPool.release(env)
         bytes
       }
-      .via(connectionFlow)
-      .map(b ⇒ throw new IllegalStateException(s"Unexpected incoming bytes in outbound connection to [${outboundContext.remoteAddress}]"))
+      .recoverWithRetries(1, { case ArteryTransport.ShutdownSignal ⇒ Source.empty })
+      .via(connectionFlowWithRestart)
+      .map(_ ⇒ throw new IllegalStateException(s"Unexpected incoming bytes in outbound connection to [${outboundContext.remoteAddress}]"))
       .toMat(Sink.ignore)(Keep.right)
+
+    // FIXME The mat value Future is currently never completed, because RestartFlow will retry forever, should it give up?
+    //       related to give-up-system-message-after ?
+
   }
 
   override protected def runInboundStreams(): Unit = {
@@ -142,7 +164,7 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
     if (isShutdown) throw ArteryTransport.ShuttingDown
 
     val (hub, ctrl, completed) =
-      MergeHub.source[EnvelopeBuffer]
+      MergeHub.source[EnvelopeBuffer].addAttributes(Attributes.logLevels(onFailure = LogLevels.Off))
         .via(inboundFlow(settings, NoInboundCompressions))
         .toMat(inboundControlSink)({ case (a, (c, d)) ⇒ (a, c, d) })
         .run()(controlMaterializer)
@@ -160,7 +182,7 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
     // FIXME inboundLanes > 1
 
     val (hub, inboundCompressionAccesses, completed) =
-      MergeHub.source[EnvelopeBuffer]
+      MergeHub.source[EnvelopeBuffer].addAttributes(Attributes.logLevels(onFailure = LogLevels.Off))
         .viaMat(inboundFlow(settings, _inboundCompressions))(Keep.both)
         .toMat(inboundSink(envelopeBufferPool))({ case ((a, b), c) ⇒ (a, b, c) })
         .run()(materializer)

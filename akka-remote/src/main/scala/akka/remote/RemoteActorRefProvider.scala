@@ -12,13 +12,17 @@ import akka.event.Logging.Error
 import akka.serialization.{ Serialization, SerializationExtension }
 import akka.pattern.pipe
 import scala.util.control.NonFatal
+
 import akka.actor.SystemGuardian.{ RegisterTerminationHook, TerminationHook, TerminationHookDone }
 import scala.util.control.Exception.Catcher
 import scala.concurrent.Future
+
 import akka.ConfigurationException
 import akka.dispatch.{ RequiresMessageQueue, UnboundedMessageQueueSemantics }
 import akka.remote.artery.ArteryTransport
-import akka.remote.artery.ArteryAeronTransport
+import akka.remote.artery.ArteryAeronUdpTransport
+import akka.remote.artery.ArterySettings
+import akka.remote.artery.ArterySettings.AeronUpd
 import akka.util.OptionVal
 import akka.remote.artery.OutboundEnvelope
 import akka.remote.artery.SystemMessageDelivery.SystemMessageEnvelope
@@ -203,7 +207,13 @@ private[akka] class RemoteActorRefProvider(
         d
       },
       serialization = SerializationExtension(system),
-      transport = if (remoteSettings.Artery.Enabled) new ArteryTcpTransport(system, this) else new Remoting(system, this)) // FIXME config
+      transport =
+        if (remoteSettings.Artery.Enabled) remoteSettings.Artery.Transport match {
+          case ArterySettings.AeronUpd ⇒ new ArteryAeronUdpTransport(system, this)
+          case ArterySettings.Tcp      ⇒ new ArteryTcpTransport(system, this, tlsEnabled = false)
+          case ArterySettings.TlsTcp   ⇒ new ArteryTcpTransport(system, this, tlsEnabled = true)
+        }
+        else new Remoting(system, this)) // FIXME config
 
     _internals = internals
     remotingTerminator ! internals

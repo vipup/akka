@@ -833,7 +833,7 @@ private[remote] object ArteryTransport {
 
   val ProtocolName = "akka"
 
-  val Version: Byte = 1 // FIXME use 0 for Aeron
+  val Version: Byte = 1 // FIXME use 0 for Aeron, move to ArterySettings
 
   class AeronTerminated(e: Throwable) extends RuntimeException(e)
 

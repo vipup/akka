@@ -47,7 +47,7 @@ import org.agrona.concurrent.status.CountersReader.MetaData
 /**
  * INTERNAL API
  */
-private[remote] class ArteryAeronTransport(_system: ExtendedActorSystem, _provider: RemoteActorRefProvider)
+private[remote] class ArteryAeronUdpTransport(_system: ExtendedActorSystem, _provider: RemoteActorRefProvider)
   extends ArteryTransport(_system, _provider) {
   import AeronSource.ResourceLifecycle
   import ArteryTransport._

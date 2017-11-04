@@ -72,6 +72,14 @@ private[akka] final class ArterySettings private (config: Config) {
   val LogSend: Boolean = getBoolean("log-sent-messages")
   val LogAeronCounters: Boolean = config.getBoolean("log-aeron-counters")
 
+  val Transport: Transport = toRootLowerCase(getString("transport")) match {
+    case "aeron-udp" ⇒ AeronUpd
+    case "tcp"       ⇒ Tcp
+    case "tls-tcp"   ⇒ TlsTcp
+    case other ⇒ throw new IllegalArgumentException(s"Unknown transport [$other], possible values: " +
+      """"aeron-udp", "tcp", or "tls-tcp"""")
+  }
+
   object Advanced {
     val config = getConfig("advanced")
     import config._
@@ -189,4 +197,9 @@ private[akka] object ArterySettings {
     case "<getHostName>"    ⇒ InetAddress.getLocalHost.getHostName
     case other              ⇒ other
   }
+
+  sealed trait Transport
+  object AeronUpd extends Transport
+  object Tcp extends Transport
+  object TlsTcp extends Transport
 }
