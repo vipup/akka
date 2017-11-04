@@ -110,28 +110,39 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
     implicit val mat = materializer
     implicit val sys = system
 
-    val controlHub = runInboundControlStream()
-    val ordinaryMessagesHub = runInboundOrdinaryMessagesStream()
-    // FIXME large messages
+    val controlStream = runInboundControlStream()
+    val ordinaryMessagesStream = runInboundOrdinaryMessagesStream()
+    val largeMessagesStream =
+      if (largeMessageChannelEnabled)
+        runInboundLargeMessagesStream()
+      else
+        Flow[EnvelopeBuffer]
+          .map(_ ⇒ log.warning("Dropping large message, missing large-message-destinations configuration."))
+          .to(Sink.ignore)
 
     val inboundStream: Sink[EnvelopeBuffer, NotUsed] =
       Sink.fromGraph(GraphDSL.create() { implicit b ⇒
         import GraphDSL.Implicits._
-        val partition = b.add(Partition[EnvelopeBuffer](2, env ⇒ {
+        val partition = b.add(Partition[EnvelopeBuffer](3, env ⇒ {
           env.byteBuffer.get(EnvelopeBuffer.StreamIdOffset).toInt match {
             case `ordinaryStreamId` ⇒ 1
             case `controlStreamId`  ⇒ 0
             case `largeStreamId`    ⇒ 2
           }
         }))
-        partition.out(0) ~> controlHub
-        partition.out(1) ~> ordinaryMessagesHub
+        partition.out(0) ~> controlStream
+        partition.out(1) ~> ordinaryMessagesStream
+        partition.out(2) ~> largeMessagesStream
         SinkShape(partition.in)
       })
 
+    val maxFrameSize =
+      if (largeMessageChannelEnabled) settings.Advanced.MaximumLargeFrameSize
+      else settings.Advanced.MaximumFrameSize
+
     val inboundConnectionFlow = Flow[ByteString]
       .via(Framing.lengthField(fieldLength = 4, fieldOffset = EnvelopeBuffer.FrameLengthOffset,
-        settings.Advanced.MaximumFrameSize, byteOrder = ByteOrder.LITTLE_ENDIAN))
+        maxFrameSize, byteOrder = ByteOrder.LITTLE_ENDIAN))
       .map { frame ⇒
         val buffer = ByteBuffer.wrap(frame.toArray)
         buffer.order(ByteOrder.LITTLE_ENDIAN)
@@ -193,6 +204,21 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
 
     updateStreamMatValues(controlStreamId, completed)
     attachStreamRestart("Inbound message stream", completed, () ⇒ runInboundOrdinaryMessagesStream())
+
+    hub
+  }
+
+  private def runInboundLargeMessagesStream(): Sink[EnvelopeBuffer, NotUsed] = {
+    if (isShutdown) throw ArteryTransport.ShuttingDown
+
+    val (hub, completed) =
+      MergeHub.source[EnvelopeBuffer].addAttributes(Attributes.logLevels(onFailure = LogLevels.Off))
+        .via(inboundLargeFlow(settings))
+        .toMat(inboundSink(largeEnvelopeBufferPool))(Keep.both)
+        .run()(materializer)
+
+    updateStreamMatValues(largeStreamId, completed)
+    attachStreamRestart("Inbound large message stream", completed, () ⇒ runInboundLargeMessagesStream())
 
     hub
   }
