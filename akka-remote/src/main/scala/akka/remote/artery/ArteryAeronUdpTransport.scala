@@ -20,6 +20,7 @@ import akka.actor.Cancellable
 import akka.actor.ExtendedActorSystem
 import akka.event.Logging
 import akka.remote.RemoteActorRefProvider
+import akka.remote.RemoteTransportException
 import akka.remote.artery.compress._
 import akka.stream.KillSwitches
 import akka.stream.scaladsl.Keep
@@ -224,13 +225,13 @@ private[remote] class ArteryAeronUdpTransport(_system: ExtendedActorSystem, _pro
         log.debug("Inbound channel is now active")
       } else if (status == ChannelEndpointStatus.ERRORED) {
         areonErrorLog.logErrors(log, 0L)
-        throw new RuntimeException("Inbound Aeron channel is in errored state. See Aeron logs for details.")
+        throw new RemoteTransportException("Inbound Aeron channel is in errored state. See Aeron logs for details.")
       } else if (status == ChannelEndpointStatus.INITIALIZING && retries > 0) {
         Thread.sleep(waitInterval)
         retry(retries - 1)
       } else {
         areonErrorLog.logErrors(log, 0L)
-        throw new RuntimeException("Timed out waiting for Aeron transport to bind. See Aeoron logs.")
+        throw new RemoteTransportException("Timed out waiting for Aeron transport to bind. See Aeoron logs.")
       }
     }
   }

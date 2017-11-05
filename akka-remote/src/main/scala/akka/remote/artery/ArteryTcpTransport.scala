@@ -9,13 +9,18 @@ import java.security.KeyStore
 import java.security.SecureRandom
 import javax.net.ssl._
 
+import scala.concurrent.Await
 import scala.concurrent.Future
 
 import akka.Done
 import akka.NotUsed
 import akka.actor.ExtendedActorSystem
+import akka.dispatch.ExecutionContexts
 import akka.remote.RemoteActorRefProvider
+import akka.remote.RemoteTransportException
 import akka.remote.artery.compress._
+import akka.stream.Attributes
+import akka.stream.Attributes.LogLevels
 import akka.stream.Client
 import akka.stream.IgnoreComplete
 import akka.stream.Server
@@ -28,20 +33,13 @@ import akka.stream.scaladsl.GraphDSL
 import akka.stream.scaladsl.Keep
 import akka.stream.scaladsl.MergeHub
 import akka.stream.scaladsl.Partition
+import akka.stream.scaladsl.RestartFlow
 import akka.stream.scaladsl.Sink
+import akka.stream.scaladsl.Source
 import akka.stream.scaladsl.TLS
 import akka.stream.scaladsl.Tcp
 import akka.stream.scaladsl.Tcp.ServerBinding
 import akka.util.ByteString
-import scala.concurrent.Await
-import scala.concurrent.Promise
-
-import akka.event.Logging
-import akka.stream.Attributes
-import akka.stream.Attributes.LogLevels
-import akka.stream.scaladsl.RestartFlow
-import akka.stream.scaladsl.RestartSink
-import akka.stream.scaladsl.Source
 
 /**
  * INTERNAL API
@@ -168,9 +166,15 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
           } else
             connection.handleWith(inboundConnectionFlow)
         })
-        .run())
+        .run()
+        .recoverWith {
+          case e ⇒ Future.failed(new RemoteTransportException(
+            s"Failed to bind TCP to [${localAddress.address.host.get}:${localAddress.address.port.get}] due to: " +
+              e.getMessage, e))
+        }(ExecutionContexts.sameThreadExecutionContext)
+      )
 
-    Await.ready(serverBinding.get, settings.Bind.BindTimeout)
+    Await.result(serverBinding.get, settings.Bind.BindTimeout)
   }
 
   private def runInboundControlStream(): Sink[EnvelopeBuffer, NotUsed] = {
@@ -203,6 +207,10 @@ private[remote] class ArteryTcpTransport(_system: ExtendedActorSystem, _provider
     setInboundCompressionAccess(inboundCompressionAccesses)
 
     updateStreamMatValues(controlStreamId, completed)
+
+    // FIXME restart of inbound is not working, see failing SurviveInboundStreamRestartWithCompressionInFlightSpec
+    //       we must restart the whole inbound thing, not this part only
+
     attachStreamRestart("Inbound message stream", completed, () ⇒ runInboundOrdinaryMessagesStream())
 
     hub
