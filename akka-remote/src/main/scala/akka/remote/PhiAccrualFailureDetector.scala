@@ -167,6 +167,8 @@ class PhiAccrualFailureDetector(
       val mean = history.mean
       val stdDeviation = ensureValidStdDeviation(history.stdDeviation)
 
+      println(s"# phi mean $mean ms") // FIXME
+
       phi(timeDiff, mean + acceptableHeartbeatPauseMillis, stdDeviation)
     }
   }

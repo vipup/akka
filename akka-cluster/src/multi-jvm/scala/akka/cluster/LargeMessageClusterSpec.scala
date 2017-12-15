@@ -26,7 +26,7 @@ object LargeMessageClusterMultiJvmSpec extends MultiNodeConfig {
   commonConfig(ConfigFactory.parseString(
     """
     akka {
-      loglevel = INFO
+      loglevel = DEBUG
       cluster.debug.verbose-heartbeat-logging = on
       loggers = ["akka.testkit.TestEventListener"]
       actor.provider = cluster
@@ -38,21 +38,23 @@ object LargeMessageClusterMultiJvmSpec extends MultiNodeConfig {
       remote.artery {
         enabled = on
 
-        large-message-destinations = [ "/user/largeEcho" ]
+        #log-aeron-counters = on
+
+        large-message-destinations = [ "/user/largeEcho", "/system/largeEchoProbe-3" ]
 
         advanced {
           #idle-cpu-level = 1
 
           #inbound-lanes = 1
 
-          maximum-frame-size = 2 MiB
-          buffer-pool-size = 32
+          #maximum-frame-size = 2 MiB
+          #buffer-pool-size = 32
           maximum-large-frame-size = 2 MiB
           large-buffer-pool-size = 32
 
           compression {
-            actor-refs.advertisement-interval = 2 second
-            manifests.advertisement-interval = 2 second
+            #actor-refs.advertisement-interval = 2 second
+            #manifests.advertisement-interval = 2 second
           }
         }
       }
@@ -102,15 +104,16 @@ abstract class LargeMessageClusterSpec extends MultiNodeSpec(LargeMessageCluster
       runOn(second) {
         val echo3 = identify(third, "echo")
         val largeEcho3 = identify(third, "largeEcho")
+        val largeEchoProbe = TestProbe(name = "largeEchoProbe")
 
         val largeMsgSize = 2 * 1000 * 1000
         val largeMsg = ("0" * largeMsgSize).getBytes("utf-8")
-        val largeMsgBurst = 15
+        val largeMsgBurst = 3
         val repeat = 15
         for (n ← 1 to repeat) {
           val startTime = System.nanoTime()
           for (_ ← 1 to largeMsgBurst) {
-            largeEcho3 ! largeMsg
+            largeEcho3.tell(largeMsg, largeEchoProbe.ref)
           }
 
           val ordinaryProbe = TestProbe()
@@ -118,12 +121,14 @@ abstract class LargeMessageClusterSpec extends MultiNodeSpec(LargeMessageCluster
           ordinaryProbe.expectMsgType[Array[Byte]]
           val ordinaryDurationMs = (System.nanoTime() - startTime) / 1000 / 1000
 
-          receiveN(largeMsgBurst, 20.seconds)
+          largeEchoProbe.receiveN(largeMsgBurst, 20.seconds)
           println(s"Burst $n took ${(System.nanoTime() - startTime) / 1000 / 1000} ms, ordinary $ordinaryDurationMs ms")
+          //Thread.sleep(10000)
         }
       }
+      enterBarrier("sending-complete-1")
 
-      unreachableProbe.expectNoMessage(25.seconds)
+      unreachableProbe.expectNoMessage(2.seconds)
 
       enterBarrier("after-1")
     }
