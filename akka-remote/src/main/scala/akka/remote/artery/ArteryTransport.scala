@@ -17,6 +17,7 @@ import scala.concurrent.{ Await, Future, Promise }
 import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
+import scala.util.Try
 import scala.util.control.NoStackTrace
 import scala.util.control.NonFatal
 
@@ -61,7 +62,7 @@ import org.agrona.concurrent.BackoffIdleStrategy
 import akka.remote.artery.Decoder.InboundCompressionAccess
 import akka.stream.Attributes
 import akka.stream.Attributes.LogLevels
-import io.aeron.driver.status.ChannelEndpointStatus
+import io.aeron.status.ChannelEndpointStatus
 import org.agrona.collections.IntObjConsumer
 import org.agrona.concurrent.status.CountersReader.MetaData
 
@@ -883,7 +884,7 @@ private[remote] class ArteryTransport(_system: ExtendedActorSystem, _provider: R
     if (hasBeenShutdown.compareAndSet(false, true)) {
       log.debug("Shutting down [{}]", localAddress)
       if (system.settings.JvmShutdownHooks)
-        Runtime.getRuntime.removeShutdownHook(shutdownHook)
+        Try(Runtime.getRuntime.removeShutdownHook(shutdownHook)) // may throw if shutdown already in progress
       val allAssociations = associationRegistry.allAssociations
       val flushing: Future[Done] =
         if (allAssociations.isEmpty) Future.successful(Done)
