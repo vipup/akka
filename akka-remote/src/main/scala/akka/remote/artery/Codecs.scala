@@ -17,12 +17,13 @@ import akka.serialization.{ Serialization, SerializationExtension }
 import akka.stream._
 import akka.stream.stage._
 import akka.util.{ OptionVal, Unsafe }
-
 import scala.concurrent.duration._
 import scala.concurrent.{ Future, Promise }
 import scala.util.control.NonFatal
+
 import akka.remote.artery.OutboundHandshake.HandshakeReq
 import akka.serialization.SerializerWithStringManifest
+import akka.stream.Attributes.LogLevels
 
 /**
  * INTERNAL API
@@ -353,6 +354,8 @@ private[remote] class Decoder(
   val shape: FlowShape[EnvelopeBuffer, InboundEnvelope] = FlowShape(in, out)
 
   def createLogicAndMaterializedValue(inheritedAttributes: Attributes): (GraphStageLogic, InboundCompressionAccess) = {
+    val debug = inheritedAttributes.get[LogLevels].map(_.onElement == Logging.DebugLevel).getOrElse(false)
+
     val logic = new TimerGraphStageLogic(shape) with InboundCompressionAccessImpl with InHandler with OutHandler with StageLogging {
       import Decoder.RetryResolveRemoteDeployedRecipient
 
@@ -517,6 +520,13 @@ private[remote] class Decoder(
                 retryResolveRemoteDeployedRecipientAttempts,
                 recipientActorRefPath, decoded), retryResolveRemoteDeployedRecipientInterval)
           } else {
+            if (debug) {
+              val remoteAddress = association match {
+                case OptionVal.Some(a) ⇒ a.remoteAddress
+                case OptionVal.None    ⇒ ""
+              }
+              log.debug("heartbeat-debug: Decoder [{}] push, msg size [{}]", remoteAddress, decoded.envelopeBuffer.byteBuffer.limit)
+            }
             push(out, decoded)
           }
         }
@@ -608,6 +618,9 @@ private[remote] class Deserializer(
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) with InHandler with OutHandler with StageLogging {
+
+      val debug = inheritedAttributes.get[LogLevels].map(_.onElement == Logging.DebugLevel).getOrElse(false)
+
       private val instruments: RemoteInstruments = RemoteInstruments(system)
       private val serialization = SerializationExtension(system)
 
@@ -628,6 +641,13 @@ private[remote] class Deserializer(
             instruments.deserialize(envelopeWithMessage)
             val time = if (instruments.timeSerialization) System.nanoTime - startTime else 0
             instruments.messageReceived(envelopeWithMessage, envelope.envelopeBuffer.byteBuffer.limit(), time)
+          }
+          if (debug) {
+            val remoteAddress = inboundContext.association(envelope.originUid) match {
+              case OptionVal.Some(a) ⇒ a.remoteAddress
+              case OptionVal.None    ⇒ ""
+            }
+            log.debug("heartbeat-debug: Deserializer [{}] push, msg class [{}]", remoteAddress, deserializedMessage.getClass.getName)
           }
           push(out, envelopeWithMessage)
         } catch {

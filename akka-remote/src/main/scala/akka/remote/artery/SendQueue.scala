@@ -4,6 +4,7 @@
 package akka.remote.artery
 
 import java.util.Queue
+
 import akka.stream.stage.GraphStage
 import akka.stream.stage.OutHandler
 import akka.stream.Attributes
@@ -15,11 +16,17 @@ import akka.stream.stage.GraphStageWithMaterializedValue
 import org.agrona.concurrent.ManyToOneConcurrentLinkedQueueTail
 import org.agrona.concurrent.ManyToOneConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
+
 import scala.annotation.tailrec
 import scala.concurrent.Promise
 import scala.util.Try
 import scala.util.Success
 import scala.util.Failure
+
+import akka.actor.ActorSelectionMessage
+import akka.event.Logging
+import akka.stream.Attributes.LogLevels
+import akka.stream.stage.StageLogging
 
 /**
  * INTERNAL API
@@ -53,7 +60,9 @@ private[remote] final class SendQueue[T] extends GraphStageWithMaterializedValue
     @volatile var needWakeup = false
     val queuePromise = Promise[Queue[T]]()
 
-    val logic = new GraphStageLogic(shape) with OutHandler with WakeupSignal {
+    val debug = inheritedAttributes.get[LogLevels].map(_.onElement == Logging.DebugLevel).getOrElse(false)
+
+    val logic = new GraphStageLogic(shape) with OutHandler with WakeupSignal with StageLogging {
 
       // using a local field for the consumer side of queue to avoid volatile access
       private var consumerQueue: Queue[T] = null
@@ -90,6 +99,16 @@ private[remote] final class SendQueue[T] extends GraphStageWithMaterializedValue
             if (firstAttempt)
               tryPush(firstAttempt = false)
           case elem ⇒
+            if (debug) {
+              val msgClass = elem match {
+                case env: OutboundEnvelope ⇒ env.message match {
+                  case ActorSelectionMessage(m, _, _) ⇒ m.getClass
+                  case m                              ⇒ m.getClass
+                }
+                case _ ⇒ elem.getClass
+              }
+              log.debug("heartbeat-debug: SendQueue [{}] push, msg class [{}]", msgClass.getName)
+            }
             needWakeup = false // there will be another onPull
             push(out, elem)
         }

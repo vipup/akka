@@ -4,6 +4,7 @@
 package akka.remote.artery
 
 import scala.annotation.tailrec
+
 import akka.stream.Attributes
 import akka.stream.Outlet
 import akka.stream.SourceShape
@@ -17,6 +18,9 @@ import org.agrona.DirectBuffer
 import org.agrona.hints.ThreadHints
 import akka.stream.stage.GraphStageWithMaterializedValue
 import scala.util.control.NonFatal
+
+import akka.event.Logging
+import akka.stream.Attributes.LogLevels
 import akka.stream.stage.StageLogging
 import io.aeron.exceptions.DriverTimeoutException
 
@@ -85,6 +89,8 @@ private[remote] class AeronSource(
   override val shape: SourceShape[EnvelopeBuffer] = SourceShape(out)
 
   override def createLogicAndMaterializedValue(inheritedAttributes: Attributes) = {
+    val debug = inheritedAttributes.get[LogLevels].map(_.onElement == Logging.DebugLevel).getOrElse(false)
+
     val logic = new GraphStageLogic(shape) with OutHandler with ResourceLifecycle with StageLogging {
 
       private val sub = aeron.addSubscription(channel, streamId)
@@ -102,6 +108,7 @@ private[remote] class AeronSource(
 
       private var pendingUnavailableImages: List[Int] = Nil
       private val onUnavailableImageCb = getAsyncCallback[Int] { sessionId ⇒
+        if (debug) log.debug("heartbeat-debug: AeronSource onUnavailableImage [{}]", sessionId)
         pendingUnavailableImages = sessionId :: pendingUnavailableImages
         freeSessionBuffers()
       }
@@ -109,10 +116,12 @@ private[remote] class AeronSource(
       override protected def logSource = classOf[AeronSource]
 
       override def preStart(): Unit = {
+        if (debug) log.debug("heartbeat-debug: AeronSource [{}] preStart", channel)
         flightRecorder.loFreq(AeronSource_Started, channelMetadata)
       }
 
       override def postStop(): Unit = {
+        if (debug) log.debug("heartbeat-debug: AeronSource [{}] preStart", channel)
         taskRunner.command(Remove(addPollTask.task))
         try sub.close() catch {
           case e: DriverTimeoutException ⇒
@@ -124,6 +133,7 @@ private[remote] class AeronSource(
 
       // OutHandler
       override def onPull(): Unit = {
+        if (debug) log.debug("heartbeat-debug: AeronSource onPull, delegatingToTaskRunner [{}]", delegatingToTaskRunner)
         backoffCount = spinning
         subscriberLoop()
       }
@@ -132,6 +142,9 @@ private[remote] class AeronSource(
         messageHandler.reset()
         val fragmentsRead = sub.poll(messageHandler.fragmentsHandler, 1)
         val msg = messageHandler.messageReceived
+        if (debug) log.debug(
+          "heartbeat-debug: AeronSource poll, fragmentsRead [{}], msgSize [{}], backoffCount [{}]",
+          fragmentsRead, if (msg eq null) 0 else msg.byteBuffer.limit, backoffCount)
         messageHandler.reset() // for GC
         if (fragmentsRead > 0) {
           countBeforeDelegate += 1
@@ -155,6 +168,9 @@ private[remote] class AeronSource(
       }
 
       private def taskOnMessage(data: EnvelopeBuffer): Unit = {
+        if (debug) log.debug(
+          "heartbeat-debug: AeronSource taskOnMessage after [{}] ns, msgSize [{}]",
+          System.nanoTime() - delegateTaskStartTime, data.byteBuffer.limit)
         countBeforeDelegate = 0
         delegatingToTaskRunner = false
         flightRecorder.hiFreq(AeronSource_ReturnFromTaskRunner, System.nanoTime() - delegateTaskStartTime)

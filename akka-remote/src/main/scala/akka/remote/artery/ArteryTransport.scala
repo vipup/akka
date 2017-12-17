@@ -59,6 +59,8 @@ import io.aeron.exceptions.DriverTimeoutException
 import org.agrona.{ DirectBuffer, ErrorHandler, IoUtil }
 import org.agrona.concurrent.BackoffIdleStrategy
 import akka.remote.artery.Decoder.InboundCompressionAccess
+import akka.stream.Attributes
+import akka.stream.Attributes.LogLevels
 import io.aeron.driver.status.ChannelEndpointStatus
 import org.agrona.collections.IntObjConsumer
 import org.agrona.concurrent.status.CountersReader.MetaData
@@ -697,6 +699,7 @@ private[remote] class ArteryTransport(_system: ExtendedActorSystem, _provider: R
       aeronSource(controlStreamId, envelopeBufferPool)
         .via(inboundFlow(settings, NoInboundCompressions))
         .toMat(inboundControlSink)({ case (a, (c, d)) ⇒ (a, c, d) })
+        .withAttributes(Attributes.logLevels(onElement = Logging.DebugLevel))
         .run()(controlMaterializer)
 
     controlSubject = ctrl
@@ -1075,6 +1078,7 @@ private[remote] class ArteryTransport(_system: ExtendedActorSystem, _provider: R
       .via(createEncoder(envelopeBufferPool))
       .toMat(new AeronSink(outboundChannel(outboundContext.remoteAddress), controlStreamId, aeron, taskRunner,
         envelopeBufferPool, Duration.Inf, createFlightRecorderEventSink()))(Keep.both)
+      .withAttributes(Attributes.logLevels(onElement = Logging.DebugLevel))
 
     // TODO we can also add scrubbing stage that would collapse sys msg acks/nacks and remove duplicate Quarantine messages
   }

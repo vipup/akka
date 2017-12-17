@@ -6,6 +6,7 @@ package akka.remote.artery
 import akka.util.PrettyDuration.PrettyPrintableDuration
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
+
 import scala.annotation.tailrec
 import scala.concurrent.Future
 import scala.concurrent.Promise
@@ -14,14 +15,18 @@ import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 import scala.util.control.NoStackTrace
+
 import akka.Done
+import akka.event.Logging
 import akka.stream.Attributes
+import akka.stream.Attributes.LogLevels
 import akka.stream.Inlet
 import akka.stream.SinkShape
 import akka.stream.stage.AsyncCallback
 import akka.stream.stage.GraphStageLogic
 import akka.stream.stage.GraphStageWithMaterializedValue
 import akka.stream.stage.InHandler
+import akka.stream.stage.StageLogging
 import io.aeron.Aeron
 import io.aeron.Publication
 import org.agrona.concurrent.UnsafeBuffer
@@ -97,7 +102,10 @@ private[remote] class AeronSink(
 
   override def createLogicAndMaterializedValue(inheritedAttributes: Attributes): (GraphStageLogic, Future[Done]) = {
     val completed = Promise[Done]()
-    val logic = new GraphStageLogic(shape) with InHandler {
+
+    val debug = inheritedAttributes.get[LogLevels].map(_.onElement == Logging.DebugLevel).getOrElse(false)
+
+    val logic = new GraphStageLogic(shape) with InHandler with StageLogging {
 
       private var envelopeInFlight: EnvelopeBuffer = null
       private val pub = aeron.addPublication(channel, streamId)
@@ -119,6 +127,7 @@ private[remote] class AeronSink(
       private val channelMetadata = channel.getBytes("US-ASCII")
 
       override def preStart(): Unit = {
+        if (debug) log.debug("heartbeat-debug: AeronSink [{}] preStart", channel)
         setKeepGoing(true)
         pull(in)
         // TODO: Identify different sinks!
@@ -127,6 +136,7 @@ private[remote] class AeronSink(
 
       override def postStop(): Unit = {
         try {
+          if (debug) log.debug("heartbeat-debug: AeronSink [{}] postStop", channel)
           taskRunner.command(Remove(addOfferTask.task))
           flightRecorder.loFreq(AeronSink_TaskRunnerRemoved, channelMetadata)
           pub.close()
@@ -142,12 +152,14 @@ private[remote] class AeronSink(
         envelopeInFlight = grab(in)
         backoffCount = spinning
         lastMsgSize = envelopeInFlight.byteBuffer.limit
+        if (debug) log.debug("heartbeat-debug: AeronSink [{}] onPush size [{}], backoffCount [{}]", channel, lastMsgSize, backoffCount)
         flightRecorder.hiFreq(AeronSink_EnvelopeGrabbed, lastMsgSize)
         publish()
       }
 
       @tailrec private def publish(): Unit = {
         val result = pub.offer(envelopeInFlight.aeronBuffer, 0, lastMsgSize)
+        if (debug) log.debug("heartbeat-debug: AeronSink [{}] publish, result [{}], backoffCount [{}]", channel, result, backoffCount)
         if (result < 0) {
           if (result == Publication.CLOSED)
             onPublicationClosed()
@@ -168,6 +180,7 @@ private[remote] class AeronSink(
       }
 
       private def delegateBackoff(): Unit = {
+        if (debug) log.debug("heartbeat-debug: AeronSink [{}] delegateBackoff, countBeforeDelegate [{}]", channel, countBeforeDelegate)
         // delegate backoff to shared TaskRunner
         offerTaskInProgress = true
         // visibility of these assignments are ensured by adding the task to the command queue
@@ -179,6 +192,7 @@ private[remote] class AeronSink(
       }
 
       private def taskOnOfferSuccess(): Unit = {
+        if (debug) log.debug("heartbeat-debug: AeronSink [{}] taskOnOfferSuccess after [{}] ns", channel, System.nanoTime() - delegateTaskStartTime)
         countBeforeDelegate = 0
         flightRecorder.hiFreq(AeronSink_ReturnFromTaskRunner, System.nanoTime() - delegateTaskStartTime)
         onOfferSuccess()
@@ -198,6 +212,7 @@ private[remote] class AeronSink(
       }
 
       private def onGiveUp(): Unit = {
+        if (debug) log.debug("heartbeat-debug: AeronSink [{}] onGiveUp", channel)
         offerTaskInProgress = false
         val cause = new GaveUpMessageException(s"Gave up sending message to $channel after ${giveUpAfter.pretty}.")
         flightRecorder.alert(AeronSink_GaveUpEnvelope, cause.getMessage.getBytes("US-ASCII"))
@@ -206,6 +221,7 @@ private[remote] class AeronSink(
       }
 
       private def onPublicationClosed(): Unit = {
+        if (debug) log.debug("heartbeat-debug: AeronSink [{}] onPublicationClosed", channel)
         offerTaskInProgress = false
         val cause = new PublicationClosedException(s"Aeron Publication to [${channel}] was closed.")
         // this is not exepected, since we didn't close the publication ourselves
