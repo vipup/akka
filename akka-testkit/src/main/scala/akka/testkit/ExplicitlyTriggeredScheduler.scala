@@ -38,7 +38,7 @@ class ExplicitlyTriggeredScheduler(config: Config, log: LoggingAdapter, tf: Thre
     schedule(delay, None, runnable)
 
   /**
-   * Advance the clock by the specified duration.
+   * Advance the clock by the specified duration, executing all outstanding jobs on the calling thread before returning.
    *
    * We will not add a dilation factor to this amount, since the scheduler API also does not apply dilation.
    * If you want the amount of time passed to be dilated, apply the dilation before passing the delay to
