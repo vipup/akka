@@ -8,10 +8,10 @@ import com.typesafe.config.Config
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.concurrent.{Await, ExecutionContext}
-import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.concurrent.{ Await, ExecutionContext }
+import scala.concurrent.duration.{ Duration, FiniteDuration }
 
-import akka.actor.{Cancellable, Scheduler}
+import akka.actor.{ Cancellable, Scheduler }
 import akka.event.LoggingAdapter
 
 /**
@@ -38,12 +38,12 @@ class ExplicitlyTriggeredScheduler(config: Config, log: LoggingAdapter, tf: Thre
     schedule(delay, None, runnable)
 
   /**
-    * Advance the clock by the specified duration.
-    *
-    * We will not add a dilation factor to this amount, since the scheduler API also does not apply dilation.
-    * If you want the amount of time passed to be dilated, apply the dilation before passing the delay to
-    * this method.
-    */
+   * Advance the clock by the specified duration.
+   *
+   * We will not add a dilation factor to this amount, since the scheduler API also does not apply dilation.
+   * If you want the amount of time passed to be dilated, apply the dilation before passing the delay to
+   * this method.
+   */
   def timePasses(amount: FiniteDuration) = {
     val newTime = currentTime.get + amount.toMillis
     executeTasks(newTime)
