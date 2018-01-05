@@ -25,12 +25,12 @@ class ManualTimerSpec extends TestKit() with ManualTime with WordSpecLike {
 
       val ref = spawn(behv)
 
-      scheduler.timePasses(9.millis)
-      probe.expectNoMsg(Duration.Zero)
+      scheduler.expectNoMessageFor(9.millis, probe)
 
       scheduler.timePasses(2.millis)
       probe.expectMsg(Tock)
-      probe.expectNoMsg(Duration.Zero)
+
+      scheduler.expectNoMessageFor(10.seconds, probe)
     }
   }
   //#manual-scheduling-simple
