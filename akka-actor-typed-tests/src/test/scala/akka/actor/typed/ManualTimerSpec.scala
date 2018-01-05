@@ -1,21 +1,22 @@
 package akka.actor.typed
 
+//#manual-scheduling-simple
 import scala.concurrent.duration._
 
 import akka.actor.typed.scaladsl.Actor
+
+import org.scalatest.WordSpecLike
 import akka.testkit.typed.TestKit
 import akka.testkit.typed.scaladsl.{ ManualTime, TestProbe }
-import org.scalatest.WordSpecLike
 
 class ManualTimerSpec extends TestKit() with ManualTime with WordSpecLike {
-  //#manual-scheduling-simple
   "A timer" must {
     "schedule non-repeated ticks" in {
       case object Tick
       case object Tock
 
       val probe = TestProbe[Tock.type]()
-      val behv = Actor.withTimers[Tick.type] { timer ⇒
+      val behavior = Actor.withTimers[Tick.type] { timer ⇒
         timer.startSingleTimer("T", Tick, 10.millis)
         Actor.immutable { (ctx, Tick) ⇒
           probe.ref ! Tock
@@ -23,7 +24,7 @@ class ManualTimerSpec extends TestKit() with ManualTime with WordSpecLike {
         }
       }
 
-      val ref = spawn(behv)
+      spawn(behavior)
 
       scheduler.expectNoMessageFor(9.millis, probe)
 
@@ -33,5 +34,5 @@ class ManualTimerSpec extends TestKit() with ManualTime with WordSpecLike {
       scheduler.expectNoMessageFor(10.seconds, probe)
     }
   }
-  //#manual-scheduling-simple
 }
+//#manual-scheduling-simple

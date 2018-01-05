@@ -11,7 +11,7 @@ import scala.concurrent.duration.{ Duration, FiniteDuration }
 class ExplicitlyTriggeredScheduler(config: Config, log: LoggingAdapter, tf: ThreadFactory) extends akka.testkit.ExplicitlyTriggeredScheduler(config, log, tf) {
 
   @varargs
-  def expectNoMessageFor[T](duration: FiniteDuration, on: scaladsl.TestProbe[T]*): Unit = {
+  def expectNoMessageFor(duration: FiniteDuration, on: scaladsl.TestProbe[_]*): Unit = {
     timePasses(duration)
     on.foreach(_.expectNoMsg(Duration.Zero))
   }
