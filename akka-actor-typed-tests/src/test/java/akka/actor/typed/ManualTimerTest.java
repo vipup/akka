@@ -7,13 +7,14 @@ package akka.actor.typed;
 import java.util.concurrent.TimeUnit;
 import static com.typesafe.config.ConfigFactory.parseString;
 
-import akka.testkit.typed.ExplicitlyTriggeredScheduler;
-import org.junit.Test;
-
 import scala.concurrent.duration.Duration;
 
 import akka.actor.typed.javadsl.Actor;
+
+import org.junit.Test;
+
 import akka.testkit.typed.TestKit;
+import akka.testkit.typed.ExplicitlyTriggeredScheduler;
 import akka.testkit.typed.javadsl.TestProbe;
 
 public class ManualTimerTest extends TestKit {
